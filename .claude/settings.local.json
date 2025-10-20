@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew compileKotlinJvm --stacktrace)",
+      "Bash(.gradlew.bat --version)",
+      "Bash(./gradlew :composeApp:run)",
+      "Bash(./gradlew clean)",
+      "Bash(./gradlew compileKotlinJvm)",
+      "Bash(cat composeApp/build.gradle.kts)",
+      "Bash(./gradlew.bat :composeApp:assembleDebug)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

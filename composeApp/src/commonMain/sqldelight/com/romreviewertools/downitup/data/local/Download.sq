@@ -1,0 +1,109 @@
+CREATE TABLE IF NOT EXISTS downloads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    downloadType TEXT NOT NULL,
+    status TEXT NOT NULL,
+    totalBytes INTEGER NOT NULL,
+    downloadedBytes INTEGER NOT NULL,
+    downloadSpeed INTEGER NOT NULL,
+    savePath TEXT NOT NULL,
+    mimeType TEXT,
+    createdAt INTEGER NOT NULL,
+    completedAt INTEGER,
+    error TEXT,
+    infoHash TEXT,
+    seeders INTEGER NOT NULL DEFAULT 0,
+    peers INTEGER NOT NULL DEFAULT 0,
+    magnetUri TEXT
+);
+
+-- Queries
+
+getAllDownloads:
+SELECT * FROM downloads ORDER BY createdAt DESC;
+
+getDownloadById:
+SELECT * FROM downloads WHERE id = :id;
+
+getDownloadsByStatus:
+SELECT * FROM downloads WHERE status = :status ORDER BY createdAt DESC;
+
+getDownloadsByStatuses:
+SELECT * FROM downloads WHERE status IN :statuses ORDER BY createdAt DESC;
+
+getDownloadCount:
+SELECT COUNT(*) FROM downloads;
+
+getDownloadCountByStatus:
+SELECT COUNT(*) FROM downloads WHERE status = :status;
+
+insertDownload:
+INSERT INTO downloads (
+    name, url, downloadType, status, totalBytes, downloadedBytes,
+    downloadSpeed, savePath, mimeType, createdAt, completedAt,
+    error, infoHash, seeders, peers, magnetUri
+) VALUES (
+    :name, :url, :downloadType, :status, :totalBytes, :downloadedBytes,
+    :downloadSpeed, :savePath, :mimeType, :createdAt, :completedAt,
+    :error, :infoHash, :seeders, :peers, :magnetUri
+);
+
+updateDownload:
+UPDATE downloads SET
+    name = :name,
+    url = :url,
+    downloadType = :downloadType,
+    status = :status,
+    totalBytes = :totalBytes,
+    downloadedBytes = :downloadedBytes,
+    downloadSpeed = :downloadSpeed,
+    savePath = :savePath,
+    mimeType = :mimeType,
+    completedAt = :completedAt,
+    error = :error,
+    seeders = :seeders,
+    peers = :peers
+WHERE id = :id;
+
+updateDownloadProgress:
+UPDATE downloads SET
+    downloadedBytes = :downloadedBytes,
+    downloadSpeed = :downloadSpeed
+WHERE id = :id;
+
+updateDownloadStatus:
+UPDATE downloads SET
+    status = :status,
+    error = :error,
+    completedAt = :completedAt
+WHERE id = :id;
+
+updateStatus:
+UPDATE downloads SET status = :status WHERE id = :id;
+
+updateDownloadError:
+UPDATE downloads SET
+    error = :error,
+    status = :status
+WHERE id = :id;
+
+updateTotalBytes:
+UPDATE downloads SET totalBytes = :totalBytes WHERE id = :id;
+
+updateDownloadCompleted:
+UPDATE downloads SET
+    status = :status,
+    downloadedBytes = :downloadedBytes,
+    downloadSpeed = :downloadSpeed,
+    completedAt = :completedAt
+WHERE id = :id;
+
+deleteDownload:
+DELETE FROM downloads WHERE id = :id;
+
+deleteAllDownloads:
+DELETE FROM downloads;
+
+lastInsertedRowId:
+SELECT last_insert_rowid();
