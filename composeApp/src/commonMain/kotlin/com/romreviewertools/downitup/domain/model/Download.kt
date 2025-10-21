@@ -21,7 +21,10 @@ data class Download(
     val infoHash: String?,
     val seeders: Int,
     val peers: Int,
-    val magnetUri: String?
+    val magnetUri: String?,
+    val connectionCount: Int,
+    val chunkedDownload: Boolean,
+    val chunks: List<DownloadChunk> = emptyList()
 ) {
     val progress: Float
         get() = if (totalBytes > 0) {
@@ -39,7 +42,7 @@ data class Download(
 }
 
 // Extension functions to map between SQLDelight model and domain model
-fun Downloads.toDomain(): Download {
+fun Downloads.toDomain(chunks: List<DownloadChunk> = emptyList()): Download {
     return Download(
         id = id,
         name = name,
@@ -57,6 +60,9 @@ fun Downloads.toDomain(): Download {
         infoHash = infoHash,
         seeders = seeders.toInt(),
         peers = peers.toInt(),
-        magnetUri = magnetUri
+        magnetUri = magnetUri,
+        connectionCount = connectionCount.toInt(),
+        chunkedDownload = chunkedDownload != 0L,
+        chunks = chunks
     )
 }

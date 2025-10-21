@@ -5,12 +5,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.romreviewertools.downitup.data.file.createFileWriter
+import com.romreviewertools.downitup.di.createHttpClient
 import com.romreviewertools.downitup.ui.downloads.DownloadsViewModel
+import com.romreviewertools.downitup.util.UrlUtils
+import kotlinx.coroutines.launch
 
 @Composable
 fun BrowserScreen(
@@ -18,17 +22,38 @@ fun BrowserScreen(
 ) {
     val fileWriter = remember { createFileWriter() }
     val downloadsDir = remember { fileWriter.getDownloadsDirectory() }
+    val httpClient = remember { createHttpClient() }
+    val coroutineScope = rememberCoroutineScope()
 
     var url by remember { mutableStateOf("") }
     var filename by remember { mutableStateOf("") }
+    var isFilenameAutoFilled by remember { mutableStateOf(false) }
+    var isFetchingFilename by remember { mutableStateOf(false) }
+    var connectionCount by remember { mutableStateOf(4) }
+    var useMultiConnection by remember { mutableStateOf(true) }
     var showSnackbar by remember { mutableStateOf(false) }
     var snackbarMessage by remember { mutableStateOf("") }
 
-    // Sample URLs for testing
+    // Auto-extract filename when URL changes
+    LaunchedEffect(url) {
+        if (url.isNotBlank() && (filename.isBlank() || isFilenameAutoFilled)) {
+            // Extract filename from URL immediately
+            val extractedFilename = UrlUtils.extractFilenameFromUrl(url)
+            if (extractedFilename != null) {
+                filename = extractedFilename
+                isFilenameAutoFilled = true
+            }
+        }
+    }
+
+    // Sample URLs for testing (all support HTTP Range / multi-connection)
     val sampleUrls = listOf(
-        "https://ash-speed.hetzner.com/100MB.bin" to "100MB Test File",
-        "https://speed.hetzner.de/1GB.bin" to "1GB Test File",
-        "https://releases.ubuntu.com/22.04/ubuntu-22.04.3-desktop-amd64.iso" to "Ubuntu 22.04 ISO"
+        "https://ash-speed.hetzner.com/100MB.bin" to "100MB (Hetzner)",
+        "https://ash-speed.hetzner.com/1GB.bin" to "1GB (Hetzner)",
+        "https://proof.ovh.net/files/100Mb.dat" to "100MB (OVH)",
+        "https://proof.ovh.net/files/1Gb.dat" to "1GB (OVH)",
+        "http://ipv4.download.thinkbroadband.com/100MB.zip" to "100MB (ThinkBroadband)",
+        "http://ipv4.download.thinkbroadband.com/512MB.zip" to "512MB (ThinkBroadband)"
     )
 
     Column(
@@ -63,15 +88,111 @@ fun BrowserScreen(
             singleLine = true
         )
 
-        // Filename Input
+        // Filename Input with auto-fetch button
         OutlinedTextField(
             value = filename,
-            onValueChange = { filename = it },
-            label = { Text("Filename") },
+            onValueChange = {
+                filename = it
+                isFilenameAutoFilled = false // User manually edited
+            },
+            label = { Text("Filename (auto-detected)") },
             placeholder = { Text("my-file.zip") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            trailingIcon = {
+                if (url.isNotBlank() && !isFetchingFilename) {
+                    IconButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                isFetchingFilename = true
+                                try {
+                                    val fetchedFilename = UrlUtils.fetchFilenameFromUrl(httpClient, url)
+                                    filename = UrlUtils.sanitizeFilename(fetchedFilename)
+                                    isFilenameAutoFilled = true
+                                } catch (e: Exception) {
+                                    snackbarMessage = "Failed to fetch filename: ${e.message}"
+                                    showSnackbar = true
+                                } finally {
+                                    isFetchingFilename = false
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Refresh, "Fetch filename from server")
+                    }
+                } else if (isFetchingFilename) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                }
+            },
+            supportingText = {
+                Text(
+                    text = if (isFilenameAutoFilled) "Auto-detected from URL" else "Enter filename or click refresh to fetch from server",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         )
+
+        // Multi-Connection Settings
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Multi-Connection Download",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Switch(
+                        checked = useMultiConnection,
+                        onCheckedChange = { useMultiConnection = it }
+                    )
+                }
+
+                if (useMultiConnection) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Number of Connections:",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "$connectionCount",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Slider(
+                            value = connectionCount.toFloat(),
+                            onValueChange = { connectionCount = it.toInt() },
+                            valueRange = 1f..16f,
+                            steps = 15,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Text(
+                            text = "More connections = faster downloads (if server allows)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+            }
+        }
 
         // Download Button
         Button(
@@ -89,16 +210,20 @@ fun BrowserScreen(
                 }
 
                 // Add download with proper path
-                val filePath = "$downloadsDir/${filename.trim()}"
+                val sanitizedFilename = UrlUtils.sanitizeFilename(filename.trim())
+                val filePath = "$downloadsDir/$sanitizedFilename"
                 viewModel?.addHttpDownload(
                     url = url.trim(),
-                    name = filename.trim(),
-                    savePath = filePath
+                    name = sanitizedFilename,
+                    savePath = filePath,
+                    connectionCount = connectionCount,
+                    useMultiConnection = useMultiConnection
                 )
 
                 // Clear inputs
                 url = ""
                 filename = ""
+                isFilenameAutoFilled = false
 
                 snackbarMessage = "Download added!"
                 showSnackbar = true
@@ -132,7 +257,7 @@ fun BrowserScreen(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     url = sampleUrl
-                    filename = sampleName
+                    // Don't set filename, let auto-detection handle it
                 }
             ) {
                 Column(

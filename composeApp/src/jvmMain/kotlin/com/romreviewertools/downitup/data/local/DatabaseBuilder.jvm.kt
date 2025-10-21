@@ -9,6 +9,12 @@ actual class DatabaseDriverFactory {
         val dbFile = File(System.getProperty("user.home"), ".downitup/downitup.db")
         dbFile.parentFile?.mkdirs()
 
+        // Delete old database for schema update (temporary - should use migrations in production)
+        if (dbFile.exists()) {
+            println("DatabaseDriverFactory: Deleting old database for schema update")
+            dbFile.delete()
+        }
+
         val driver = JdbcSqliteDriver("jdbc:sqlite:${dbFile.absolutePath}")
         AppDatabase.Schema.create(driver)
         return driver

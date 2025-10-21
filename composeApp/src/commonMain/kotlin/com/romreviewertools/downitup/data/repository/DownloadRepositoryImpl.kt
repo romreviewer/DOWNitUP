@@ -8,6 +8,7 @@ import com.romreviewertools.downitup.data.local.AppDatabase
 import com.romreviewertools.downitup.data.local.model.DownloadStatus
 import com.romreviewertools.downitup.data.local.model.DownloadType
 import com.romreviewertools.downitup.domain.model.Download
+import com.romreviewertools.downitup.domain.model.DownloadChunk
 import com.romreviewertools.downitup.domain.model.toDomain
 import com.romreviewertools.downitup.domain.repository.DownloadRepository
 import kotlinx.coroutines.Dispatchers
@@ -20,12 +21,20 @@ class DownloadRepositoryImpl(
 ) : DownloadRepository {
 
     private val queries = database.downloadQueries
+    private val chunkQueries = database.downloadChunkQueries
 
     override fun getAllDownloads(): Flow<List<Download>> {
         return queries.getAllDownloads()
             .asFlow()
             .mapToList(Dispatchers.Default)
-            .map { list -> list.map { it.toDomain() } }
+            .map { list ->
+                list.map { downloadEntity ->
+                    val chunks = chunkQueries.getChunksByDownloadId(downloadEntity.id)
+                        .executeAsList()
+                        .map { it.toDomain() }
+                    downloadEntity.toDomain(chunks)
+                }
+            }
     }
 
     override fun getActiveDownloads(): Flow<List<Download>> {
@@ -37,32 +46,65 @@ class DownloadRepositoryImpl(
         return queries.getDownloadsByStatuses(activeStatuses)
             .asFlow()
             .mapToList(Dispatchers.Default)
-            .map { list -> list.map { it.toDomain() } }
+            .map { list ->
+                list.map { downloadEntity ->
+                    val chunks = chunkQueries.getChunksByDownloadId(downloadEntity.id)
+                        .executeAsList()
+                        .map { it.toDomain() }
+                    downloadEntity.toDomain(chunks)
+                }
+            }
     }
 
     override fun getCompletedDownloads(): Flow<List<Download>> {
         return queries.getDownloadsByStatus(DownloadStatus.COMPLETED.name)
             .asFlow()
             .mapToList(Dispatchers.Default)
-            .map { list -> list.map { it.toDomain() } }
+            .map { list ->
+                list.map { downloadEntity ->
+                    val chunks = chunkQueries.getChunksByDownloadId(downloadEntity.id)
+                        .executeAsList()
+                        .map { it.toDomain() }
+                    downloadEntity.toDomain(chunks)
+                }
+            }
     }
 
     override fun getDownloadsByStatus(status: DownloadStatus): Flow<List<Download>> {
         return queries.getDownloadsByStatus(status.name)
             .asFlow()
             .mapToList(Dispatchers.Default)
-            .map { list -> list.map { it.toDomain() } }
+            .map { list ->
+                list.map { downloadEntity ->
+                    val chunks = chunkQueries.getChunksByDownloadId(downloadEntity.id)
+                        .executeAsList()
+                        .map { it.toDomain() }
+                    downloadEntity.toDomain(chunks)
+                }
+            }
     }
 
     override suspend fun getDownloadById(id: Long): Download? {
         return withContext(Dispatchers.Default) {
-            queries.getDownloadById(id).executeAsOneOrNull()?.toDomain()
+            val downloadEntity = queries.getDownloadById(id).executeAsOneOrNull()
+            downloadEntity?.let {
+                val chunks = chunkQueries.getChunksByDownloadId(it.id)
+                    .executeAsList()
+                    .map { chunk -> chunk.toDomain() }
+                it.toDomain(chunks)
+            }
         }
     }
 
-    override suspend fun addHttpDownload(url: String, name: String, savePath: String): Long {
+    override suspend fun addHttpDownload(
+        url: String,
+        name: String,
+        savePath: String,
+        connectionCount: Int,
+        useMultiConnection: Boolean
+    ): Long {
         return withContext(Dispatchers.Default) {
-            println("DownloadRepository: Inserting download - URL: $url, Name: $name")
+            println("DownloadRepository: Inserting download - URL: $url, Name: $name, Connections: $connectionCount")
 
             queries.insertDownload(
                 name = name,
@@ -80,7 +122,9 @@ class DownloadRepositoryImpl(
                 infoHash = null,
                 seeders = 0,
                 peers = 0,
-                magnetUri = null
+                magnetUri = null,
+                connectionCount = connectionCount.toLong(),
+                chunkedDownload = if (useMultiConnection) 1 else 0
             )
 
             val insertedId = queries.lastInsertedRowId().executeAsOne()
@@ -128,7 +172,9 @@ class DownloadRepositoryImpl(
                 infoHash = infoHash,
                 seeders = 0,
                 peers = 0,
-                magnetUri = magnetUri
+                magnetUri = magnetUri,
+                connectionCount = 1,
+                chunkedDownload = 0
             )
             queries.lastInsertedRowId().executeAsOne()
         }

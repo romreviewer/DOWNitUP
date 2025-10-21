@@ -1,0 +1,31 @@
+-- Chunk Queries
+
+getChunksByDownloadId:
+SELECT * FROM download_chunks WHERE downloadId = :downloadId ORDER BY chunkIndex ASC;
+
+getChunkById:
+SELECT * FROM download_chunks WHERE id = :id;
+
+insertChunk:
+INSERT INTO download_chunks (
+    downloadId, chunkIndex, startByte, endByte, downloadedBytes, status, speed
+) VALUES (
+    :downloadId, :chunkIndex, :startByte, :endByte, :downloadedBytes, :status, :speed
+);
+
+updateChunkProgress:
+UPDATE download_chunks SET
+    downloadedBytes = :downloadedBytes,
+    speed = :speed
+WHERE id = :id;
+
+updateChunkStatus:
+UPDATE download_chunks SET
+    status = :status
+WHERE id = :id;
+
+deleteChunksByDownloadId:
+DELETE FROM download_chunks WHERE downloadId = :downloadId;
+
+deleteChunk:
+DELETE FROM download_chunks WHERE id = :id;

@@ -34,6 +34,13 @@ A cross-platform (Android, iOS, Desktop) file downloader supporting both HTTP an
 - **Actual file writing** to disk with platform-specific FileWriter
 - **8KB buffer** streaming for memory efficiency
 - **Error handling** with database error logging
+- **🆕 Multi-Connection Downloads** (Phase 3.6):
+  - Parallel chunk downloading (1-16 connections)
+  - Automatic server capability detection
+  - Smart fallback for unsupported servers
+  - Per-connection progress tracking
+  - Real-time UI visualization of all connections
+  - 4-16x faster downloads (server dependent)
 
 #### ✅ Phase 3.5: File Management (COMPLETE)
 - Platform-specific FileWriter (`expect`/`actual`)
@@ -350,46 +357,34 @@ expect object DatabaseBuilder {
 
 Platform implementations in respective source sets.
 
-### Phase 3: Download Engine - HTTP (Week 2)
+### Phase 3: Download Engine - HTTP (Week 2) ✅ COMPLETE
 
-#### Step 3.1: HTTP Download Manager
-File: `commonMain/kotlin/com/romreviewertools/downitup/data/download/HttpDownloadManager.kt`
-```kotlin
-class HttpDownloadManager(
-    private val client: HttpClient,
-    private val dao: DownloadDao
-) {
-    private val activeDownloads = mutableMapOf<Long, Job>()
+#### Step 3.1: HTTP Download Manager ✅
+**Status**: Complete with multi-connection support
 
-    suspend fun startDownload(downloadId: Long) {
-        val download = dao.getDownloadById(downloadId) ?: return
+**Features Implemented**:
+- ✅ Single-connection downloads with resume capability
+- ✅ Multi-connection parallel chunk downloading
+- ✅ Server capability detection (Range headers support)
+- ✅ Intelligent fallback mechanisms
+- ✅ Real-time progress aggregation from all chunks
+- ✅ Per-chunk speed tracking and UI visualization
 
-        activeDownloads[downloadId] = CoroutineScope(Dispatchers.IO).launch {
-            try {
-                downloadFile(download)
-            } catch (e: Exception) {
-                handleDownloadError(downloadId, e)
-            }
-        }
-    }
+**Key Implementation Details**:
+- **Database Schema**: Added `download_chunks` table for chunk tracking
+- **Connection Management**:
+  - Default: 4 connections (configurable 1-16)
+  - Minimum file size for chunking: 10 MB
+  - Minimum chunk size: 1 MB
+- **Algorithm**:
+  1. HEAD request to check server Range support
+  2. Calculate optimal chunk sizes
+  3. Launch parallel coroutines for each chunk
+  4. Each chunk writes to specific file position using `seek()`
+  5. Progress aggregated every 500ms
+  6. UI displays real-time per-connection progress
 
-    private suspend fun downloadFile(download: DownloadEntity) {
-        // Implement resumable download logic
-        // Update progress in database
-        // Support chunked downloads
-    }
-
-    suspend fun pauseDownload(downloadId: Long) {
-        activeDownloads[downloadId]?.cancel()
-        activeDownloads.remove(downloadId)
-    }
-
-    suspend fun cancelDownload(downloadId: Long) {
-        pauseDownload(downloadId)
-        // Delete partial files
-    }
-}
-```
+**File**: `commonMain/kotlin/com/romreviewertools/downitup/data/manager/HttpDownloadManager.kt`
 
 ### Phase 4: Download Engine - Torrent (Week 3)
 

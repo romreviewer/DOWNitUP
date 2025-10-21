@@ -23,7 +23,9 @@ interface DownloadRepository {
     suspend fun addHttpDownload(
         url: String,
         name: String,
-        savePath: String
+        savePath: String,
+        connectionCount: Int = 4,
+        useMultiConnection: Boolean = true
     ): Long
 
     suspend fun addTorrentDownload(
