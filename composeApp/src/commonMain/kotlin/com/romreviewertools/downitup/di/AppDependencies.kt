@@ -6,7 +6,9 @@ import com.romreviewertools.downitup.data.local.AppDatabase
 import com.romreviewertools.downitup.data.local.DatabaseDriverFactory
 import com.romreviewertools.downitup.data.local.createDatabase
 import com.romreviewertools.downitup.data.manager.HttpDownloadManager
+import com.romreviewertools.downitup.data.manager.UnifiedDownloadManager
 import com.romreviewertools.downitup.data.repository.DownloadRepositoryImpl
+import com.romreviewertools.downitup.data.torrent.TorrentDownloadManager
 import com.romreviewertools.downitup.domain.manager.DownloadManager
 import com.romreviewertools.downitup.domain.repository.DownloadRepository
 import com.romreviewertools.downitup.ui.downloads.DownloadsViewModel
@@ -30,11 +32,21 @@ class AppDependencies(databaseDriverFactory: DatabaseDriverFactory) {
     // Repository
     val repository: DownloadRepository = DownloadRepositoryImpl(database)
 
-    // Download Manager
-    val downloadManager: DownloadManager = HttpDownloadManager(
+    // HTTP Download Manager
+    private val httpDownloadManager: HttpDownloadManager = HttpDownloadManager(
         httpClient = httpClient,
         database = database,
         fileWriter = fileWriter
+    )
+
+    // Torrent Download Manager
+    private val torrentDownloadManager: TorrentDownloadManager = TorrentDownloadManager()
+
+    // Unified Download Manager (routes to appropriate manager based on type)
+    val downloadManager: DownloadManager = UnifiedDownloadManager(
+        httpManager = httpDownloadManager,
+        torrentManager = torrentDownloadManager,
+        database = database
     )
 
     // ViewModels
@@ -47,7 +59,7 @@ class AppDependencies(databaseDriverFactory: DatabaseDriverFactory) {
      * Clean up resources when app closes
      */
     fun shutdown() {
-        (downloadManager as? HttpDownloadManager)?.shutdown()
+        (downloadManager as? UnifiedDownloadManager)?.shutdown()
         httpClient.close()
     }
 }

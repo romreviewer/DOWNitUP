@@ -106,6 +106,14 @@ WHERE id = :id;
 updateTotalBytes:
 UPDATE downloads SET totalBytes = :totalBytes WHERE id = :id;
 
+updateTorrentProgress:
+UPDATE downloads SET
+    downloadedBytes = :downloadedBytes,
+    downloadSpeed = :downloadSpeed,
+    seeders = :seeders,
+    peers = :peers
+WHERE id = :id;
+
 updateDownloadCompleted:
 UPDATE downloads SET
     status = :status,

@@ -70,13 +70,48 @@ A cross-platform (Android, iOS, Desktop) file downloader supporting both HTTP an
   - Success/error messages
 - **ViewModel** integration with repository & download manager
 
-### Pending Phases:
+#### 🚧 Phase 4: Torrent Download Manager (IN PROGRESS)
+- **Library Choice**: **libtorrent4j** (2.1.0-38) - Better documentation than Anitorrent
+- **Architecture**: Hybrid platform-specific implementation with `expect`/`actual` pattern
+- **Status**: Foundation complete, API integration in progress
 
-#### ⏳ Phase 4: Torrent Download Manager
-- Platform-specific torrent implementations
-- Android: TorrentStream-Android
-- Desktop: Anitorrent
-- iOS: Custom implementation
+**Completed**:
+- ✅ `TorrentDownloadManager` expect/actual interface
+- ✅ `UnifiedDownloadManager` - Routes HTTP vs Torrent based on download type
+- ✅ Torrent data models (`TorrentProgress`, `TorrentMetadata`, `TorrentState`)
+- ✅ Magnet link detection and parsing in BrowserScreen
+- ✅ UI components for torrent info display
+- ✅ Database schema already supports torrent fields
+- ✅ Repository `addTorrentDownload()` method
+- ✅ ViewModel `addTorrentDownload()` method
+- ✅ DI configuration with `UnifiedDownloadManager`
+- ✅ libtorrent4j dependencies added for Desktop & Android
+- ✅ Desktop (JVM) implementation scaffold created
+- ✅ Android implementation scaffold created (libtorrent4j)
+- ✅ iOS stub implementation (NotImplementedError)
+
+**In Progress**:
+- ⏳ Desktop (JVM) libtorrent4j API integration
+  - SessionManager initialization ✅
+  - Magnet link download method (API adjustments needed)
+  - Progress monitoring implementation
+  - State mapping to TorrentState enum
+
+**Remaining**:
+- 🔲 Complete Desktop libtorrent4j API integration
+- 🔲 Android libtorrent4j implementation
+- 🔲 Test torrent downloads end-to-end
+- 🔲 Database progress updates for torrents
+- 🔲 Sequential download for streaming
+- 🔲 iOS implementation (defer to v2.0 or use custom bridge)
+
+**Technology Stack**:
+- **Desktop & Android**: org.libtorrent4j:libtorrent4j:2.1.0-38
+  - Desktop: Base library + native bindings
+  - Android: Base library + arm64/arm architectures
+- **iOS**: Deferred (stub implementation)
+
+### Pending Phases:
 
 #### ⏳ Phase 5: Advanced Features
 - Background downloads
@@ -96,13 +131,17 @@ A cross-platform (Android, iOS, Desktop) file downloader supporting both HTTP an
   2. **Browser** - TravelExplore icon (🌐🔍) - Add new downloads (HTTP/Torrent URLs)
 
 ### Data Layer
-- **Local Database**: Room KMP for download metadata
+- **Local Database**: SQLDelight 2.0.2 for download metadata
 - **Download Engines**:
-  - HTTP: Ktor Client with resumable downloads
-  - Torrent: Platform-specific implementations (see TORRENT_LIBRARY_RESEARCH.md)
-    - Android: TorrentStream-Android or Anitorrent
-    - Desktop: Anitorrent
-    - iOS: SwiftyTorrent or custom libtorrent bridge
+  - **HTTP**: Ktor Client with resumable downloads & multi-connection support
+  - **Torrent**: Platform-specific implementations using libtorrent4j
+    - Android: libtorrent4j (arm64, arm)
+    - Desktop: libtorrent4j (JVM)
+    - iOS: Stub implementation (deferred)
+- **UnifiedDownloadManager**: Routes downloads to appropriate manager based on type
+  - Automatically detects HTTP vs Torrent from database
+  - Delegates operations (start, pause, cancel, delete) to correct engine
+  - Provides unified interface for ViewModel
 
 ### Domain Layer
 - Repository pattern for download management
@@ -386,92 +425,161 @@ Platform implementations in respective source sets.
 
 **File**: `commonMain/kotlin/com/romreviewertools/downitup/data/manager/HttpDownloadManager.kt`
 
-### Phase 4: Download Engine - Torrent (Week 3)
+### Phase 4: Download Engine - Torrent (Week 3) 🚧 IN PROGRESS
 
 #### Step 4.1: Torrent Download Manager
 **Research Finding**: No single KMP torrent library supports all platforms. See `TORRENT_LIBRARY_RESEARCH.md` for full analysis.
 
-**Recommended Approach: Hybrid Platform-Specific Implementation**
+**Chosen Library: libtorrent4j** (v2.1.0-38)
+- Better documentation than Anitorrent
+- Active maintenance
+- Works on Desktop JVM and Android
+- SessionManager API for easy integration
+
+**Implementation Approach: Hybrid Platform-Specific**
 
 Add dependencies:
 ```kotlin
+// gradle/libs.versions.toml
+[versions]
+libtorrent4j = "2.1.0-38"
+
+[libraries]
+libtorrent4j = { module = "org.libtorrent4j:libtorrent4j", version.ref = "libtorrent4j" }
+libtorrent4j-android-arm64 = { module = "org.libtorrent4j:libtorrent4j-android-arm64", version.ref = "libtorrent4j" }
+libtorrent4j-android-arm = { module = "org.libtorrent4j:libtorrent4j-android-arm", version.ref = "libtorrent4j" }
+
 // composeApp/build.gradle.kts
-
 androidMain.dependencies {
-    // Option 1: TorrentStream-Android (best for streaming)
-    implementation("com.github.TorrentStream:TorrentStream-Android:2.7.0")
-
-    // Option 2: Anitorrent (if consistency with desktop preferred)
-    // implementation("org.openani.anitorrent:anitorrent-native:0.2.0")
+    implementation(libs.libtorrent4j)
+    implementation(libs.libtorrent4j.android.arm64)
+    implementation(libs.libtorrent4j.android.arm)
 }
 
 jvmMain.dependencies {
-    // Anitorrent for Desktop
-    implementation("org.openani.anitorrent:anitorrent-native:0.2.0")
+    implementation(libs.libtorrent4j)
 }
 
-// iOS - requires custom implementation (see research doc)
+// iOS - stub implementation for now
 ```
 
 **Implementation with expect/actual:**
 ```kotlin
-// commonMain
-expect class TorrentDownloadManager {
-    suspend fun addTorrent(magnetUri: String, savePath: String): String
-    suspend fun startDownload(torrentId: String)
-    suspend fun pauseDownload(torrentId: String)
-    suspend fun setSequentialDownload(torrentId: String, enabled: Boolean)
-    fun getProgress(torrentId: String): Flow<TorrentProgress>
+// commonMain/kotlin/.../data/torrent/TorrentDownloadManager.kt
+expect class TorrentDownloadManager() : DownloadManager {
+    suspend fun addMagnetLink(downloadId: Long, magnetUri: String, savePath: String): String
+    suspend fun addTorrentFile(downloadId: Long, torrentFilePath: String, savePath: String): String
+    suspend fun setSequentialDownload(downloadId: Long, enabled: Boolean)
+    fun getTorrentProgress(downloadId: Long): Flow<TorrentProgress>
+    fun parseMagnetLink(magnetUri: String): TorrentMetadata
+    fun isMagnetLink(url: String): Boolean
 }
 
-// androidMain - Use TorrentStream-Android
-actual class TorrentDownloadManager {
-    private val torrentStream = TorrentStream.init(torrentOptions)
-
-    actual suspend fun addTorrent(magnetUri: String, savePath: String): String {
-        return torrentStream.startStream(magnetUri)
-    }
-
-    actual suspend fun setSequentialDownload(torrentId: String, enabled: Boolean) {
-        // TorrentStream handles this automatically for streaming
-    }
-
-    // ... implementation details
-}
-
-// jvmMain - Use Anitorrent
-actual class TorrentDownloadManager {
-    private val session = TorrentSession()
-
-    actual suspend fun addTorrent(magnetUri: String, savePath: String): String {
-        val params = AddTorrentParams().apply {
-            this.savePath = savePath
-            this.url = magnetUri
+// commonMain/kotlin/.../data/manager/UnifiedDownloadManager.kt
+class UnifiedDownloadManager(
+    private val httpManager: HttpDownloadManager,
+    private val torrentManager: TorrentDownloadManager,
+    private val database: AppDatabase
+) : DownloadManager {
+    override suspend fun startDownload(downloadId: Long) {
+        val download = getDownloadType(downloadId)
+        when (download?.downloadType) {
+            DownloadType.HTTP -> httpManager.startDownload(downloadId)
+            DownloadType.TORRENT -> torrentManager.startDownload(downloadId)
+            null -> println("Download $downloadId not found")
         }
-        val handle = session.addTorrent(params)
-        return handle.infoHash()
     }
-
-    actual suspend fun setSequentialDownload(torrentId: String, enabled: Boolean) {
-        val handle = session.findTorrent(torrentId)
-        handle.setSequentialDownload(enabled)
-    }
-
-    // ... implementation details
+    // ... routes all operations to appropriate manager
 }
 
-// iosMain - Custom implementation or defer to Phase 2
-actual class TorrentDownloadManager {
-    // TODO: Implement using SwiftyTorrent or native libtorrent bridge
-    // For MVP, can throw NotImplementedError or use HTTP-only
+// jvmMain - libtorrent4j implementation
+actual class TorrentDownloadManager actual constructor() : DownloadManager {
+    private val sessionManager: SessionManager
+    private val activeTorrents = mutableMapOf<Long, TorrentHandle>()
+
+    init {
+        sessionManager = object : SessionManager() {
+            override fun onBeforeStart() {
+                super.onBeforeStart()
+                val sp = SessionParams(SettingsPack())
+                sp.settings().enableDht(true)  // Enable DHT for magnet links
+            }
+        }
+        sessionManager.start()
+    }
+
+    actual suspend fun addMagnetLink(downloadId: Long, magnetUri: String, savePath: String): String {
+        val saveDir = File(savePath).parentFile ?: File(savePath)
+        val handle = sessionManager.download(magnetUri, saveDir)
+        activeTorrents[downloadId] = handle
+        startProgressMonitoring(downloadId, handle)
+        return handle.infoHash().toHex()
+    }
+
+    // ... progress monitoring, pause/resume implementation
+}
+
+// androidMain - libtorrent4j implementation
+actual class TorrentDownloadManager actual constructor() : DownloadManager {
+    private val sessionManager: SessionManager
+    // Similar to JVM implementation but may have Android-specific optimizations
+}
+
+// iosMain - Stub for MVP
+actual class TorrentDownloadManager actual constructor() : DownloadManager {
+    actual suspend fun addMagnetLink(...): String {
+        throw NotImplementedError("Torrent downloads not yet supported on iOS")
+    }
 }
 ```
 
-**Phased Approach (Recommended for MVP):**
-1. **Phase 4A**: HTTP downloads only (all platforms) - Week 3
-2. **Phase 4B**: Android torrents (TorrentStream) - Week 5
-3. **Phase 4C**: Desktop torrents (Anitorrent) - Week 6
-4. **Phase 4D**: iOS torrents (custom) - Week 7-8 or defer to v2.0
+**Data Models:**
+```kotlin
+// commonMain/kotlin/.../data/torrent/TorrentModels.kt
+@Serializable
+data class TorrentProgress(
+    val downloadId: Long,
+    val progress: Float,  // 0.0 to 1.0
+    val downloadSpeed: Long,
+    val uploadSpeed: Long,
+    val downloadedBytes: Long,
+    val totalBytes: Long,
+    val numSeeds: Int,
+    val numPeers: Int,
+    val state: TorrentState
+)
+
+enum class TorrentState {
+    CHECKING_FILES,
+    DOWNLOADING_METADATA,
+    DOWNLOADING,
+    FINISHED,
+    SEEDING,
+    ALLOCATING,
+    CHECKING_RESUME_DATA
+}
+
+data class TorrentMetadata(
+    val infoHash: String,
+    val name: String?,
+    val totalSize: Long,
+    val trackers: List<String> = emptyList()
+)
+```
+
+**Phased Approach (Updated for MVP):**
+1. **Phase 4A**: HTTP downloads only (all platforms) - ✅ COMPLETE
+2. **Phase 4B**: Torrent architecture & UI - ✅ COMPLETE
+   - UnifiedDownloadManager routing
+   - Magnet link detection in BrowserScreen
+   - Torrent data models and database schema
+   - ViewModel and Repository integration
+3. **Phase 4C**: Desktop torrents (libtorrent4j) - 🚧 IN PROGRESS (90% complete)
+   - Dependencies added ✅
+   - SessionManager initialization ✅
+   - API integration adjustments needed
+4. **Phase 4D**: Android torrents (libtorrent4j) - ⏳ PENDING
+5. **Phase 4E**: iOS torrents - ⏳ DEFERRED to v2.0 (stub implementation ready)
 
 #### Step 4.2: Torrent File Parser
 File: `commonMain/kotlin/com/romreviewertools/downitup/data/torrent/TorrentParser.kt`
@@ -808,10 +916,78 @@ Implement expect/actual for:
 
 ---
 
+## Current Implementation Status (Latest Update)
+
+### What's Working Right Now ✅
+1. **HTTP Downloads** - Fully functional with multi-connection support
+   - Downloads work on Desktop, Android, iOS
+   - Resume, pause, cancel, delete all working
+   - Real-time progress tracking
+   - Speed calculations
+   - Multi-connection (1-16 parallel connections)
+
+2. **Torrent Architecture** - Complete foundation
+   - Magnet link detection in UI ✅
+   - Beautiful torrent info cards showing metadata ✅
+   - Database schema supports torrents ✅
+   - Repository `addTorrentDownload()` method ✅
+   - ViewModel integration complete ✅
+   - UnifiedDownloadManager routing ✅
+
+3. **UI** - Polished and functional
+   - Downloads screen with progress bars
+   - Browser screen with URL input and validation
+   - Magnet link auto-detection with visual feedback
+   - Dynamic UI based on download type
+
+### What's In Progress 🚧
+1. **Desktop Torrent Implementation** (90% complete)
+   - libtorrent4j integrated
+   - SessionManager initialized
+   - Needs API method adjustments:
+     - `sessionManager.fetchMagnet()` for magnet links
+     - Correct method signatures for TorrentHandle API
+     - State enum mapping fixes
+
+2. **Android Torrent Implementation** (Dependencies ready)
+   - libtorrent4j dependencies added (arm64, arm)
+   - Implementation scaffold created
+   - Needs similar API adjustments as Desktop
+
+### Next Immediate Steps 🎯
+1. Fix libtorrent4j API calls in Desktop implementation
+   - Use `fetchMagnet()` instead of `download()` for magnet URIs
+   - Adjust TorrentHandle method calls
+   - Fix TorrentStatus.State mappings
+2. Test Desktop torrent download end-to-end
+3. Implement Android TorrentDownloadManager
+4. Add database progress updates for torrents
+5. Test complete flow: Add magnet → Download → Track progress → Complete
+
+### Files Created/Modified Today 📁
+**New Files:**
+- `TorrentDownloadManager.kt` (commonMain) - expect interface
+- `TorrentModels.kt` (commonMain) - data models
+- `UnifiedDownloadManager.kt` (commonMain) - routing manager
+- `TorrentDownloadManager.jvm.kt` - Desktop implementation
+- `TorrentDownloadManager.android.kt` - Android implementation
+- `TorrentDownloadManager.ios.kt` - iOS stub
+
+**Modified Files:**
+- `AppDependencies.kt` - Added UnifiedDownloadManager
+- `DownloadsViewModel.kt` - Added `addTorrentDownload()`
+- `BrowserScreen.kt` - Magnet link detection & UI
+- `Download.sq` - Added `updateTorrentProgress` query
+- `build.gradle.kts` - libtorrent4j dependencies
+- `libs.versions.toml` - libtorrent4j version catalog
+
 ## Next Steps
 
-1. Review and approve this solution document
-2. Set up project dependencies
-3. Create feature branches for each phase
-4. Start with Phase 1 implementation
-5. Iterate based on testing feedback
+1. ✅ ~~Review and approve this solution document~~
+2. ✅ ~~Set up project dependencies~~
+3. ✅ ~~Create feature branches for each phase~~
+4. ✅ ~~Start with Phase 1 implementation~~
+5. 🚧 Complete libtorrent4j API integration (Desktop)
+6. ⏳ Test torrent downloads end-to-end
+7. ⏳ Implement Android torrent support
+8. ⏳ Phase 5: Advanced features (background downloads, notifications)

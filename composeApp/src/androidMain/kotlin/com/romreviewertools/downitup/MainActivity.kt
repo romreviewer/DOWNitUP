@@ -12,7 +12,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.content.ContextCompat
 import com.romreviewertools.downitup.data.local.DatabaseDriverFactory
+import com.romreviewertools.downitup.data.settings.initializeSettings
 import com.romreviewertools.downitup.di.AppDependencies
+import com.romreviewertools.downitup.util.initializePermissionHandler
 
 class MainActivity : ComponentActivity() {
     private lateinit var dependencies: AppDependencies
@@ -32,6 +34,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+
+        // Initialize platform-specific components
+        initializeSettings(applicationContext)
+        initializePermissionHandler(applicationContext)
 
         // Initialize dependencies with Android context
         dependencies = AppDependencies(DatabaseDriverFactory(applicationContext))

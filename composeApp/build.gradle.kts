@@ -36,6 +36,13 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.sqldelight.android)
+            implementation(libs.accompanist.permissions)
+            implementation(libs.multiplatform.settings)
+
+            // Torrent support for Android - libtorrent4j
+            implementation(libs.libtorrent4j)
+            implementation(libs.libtorrent4j.android.arm64)
+            implementation(libs.libtorrent4j.android.arm)
         }
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -62,6 +69,9 @@ kotlin {
 
             // Serialization
             implementation(libs.kotlinx.serialization.json)
+
+            // Settings
+            implementation(libs.multiplatform.settings.noarg)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -71,10 +81,15 @@ kotlin {
             implementation(libs.kotlinx.coroutinesSwing)
             implementation(libs.ktor.client.cio)
             implementation(libs.sqldelight.jvm)
+            implementation(libs.multiplatform.settings)
+
+            // Torrent support for Desktop - libtorrent4j
+            implementation(libs.libtorrent4j)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
             implementation(libs.sqldelight.native)
+            implementation(libs.multiplatform.settings)
         }
     }
 }

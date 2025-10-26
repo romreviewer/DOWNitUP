@@ -11,7 +11,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.romreviewertools.downitup.data.file.createFileWriter
+import com.romreviewertools.downitup.data.settings.SettingsRepository
+import com.romreviewertools.downitup.data.settings.createSettings
 import com.romreviewertools.downitup.di.createHttpClient
+import com.romreviewertools.downitup.data.torrent.detectTorrentType
+import com.romreviewertools.downitup.data.torrent.TorrentDetectionResult
 import com.romreviewertools.downitup.ui.downloads.DownloadsViewModel
 import com.romreviewertools.downitup.util.UrlUtils
 import kotlinx.coroutines.launch
@@ -21,18 +25,35 @@ fun BrowserScreen(
     viewModel: DownloadsViewModel? = null
 ) {
     val fileWriter = remember { createFileWriter() }
-    val downloadsDir = remember { fileWriter.getDownloadsDirectory() }
+    val settingsRepository = remember { SettingsRepository(createSettings()) }
     val httpClient = remember { createHttpClient() }
     val coroutineScope = rememberCoroutineScope()
+
+    // Get download location from settings or use default
+    val customDownloadLocation by settingsRepository.downloadLocation.collectAsState()
+    val downloadsDir = remember(customDownloadLocation) {
+        customDownloadLocation ?: fileWriter.getDownloadsDirectory()
+    }
+
+    // Get default settings
+    val defaultUseMultiConnection by settingsRepository.useMultiConnectionDefault.collectAsState()
+    val defaultConnectionCount by settingsRepository.defaultConnectionCount.collectAsState()
 
     var url by remember { mutableStateOf("") }
     var filename by remember { mutableStateOf("") }
     var isFilenameAutoFilled by remember { mutableStateOf(false) }
     var isFetchingFilename by remember { mutableStateOf(false) }
-    var connectionCount by remember { mutableStateOf(4) }
-    var useMultiConnection by remember { mutableStateOf(true) }
+    var connectionCount by remember(defaultConnectionCount) { mutableStateOf(defaultConnectionCount) }
+    var useMultiConnection by remember(defaultUseMultiConnection) { mutableStateOf(defaultUseMultiConnection) }
     var showSnackbar by remember { mutableStateOf(false) }
     var snackbarMessage by remember { mutableStateOf("") }
+
+    // Torrent detection
+    val torrentDetection = remember(url) {
+        detectTorrentType(url.trim())
+    }
+    val isTorrent = torrentDetection is TorrentDetectionResult.MagnetLink ||
+                     torrentDetection is TorrentDetectionResult.TorrentFile
 
     // Auto-extract filename when URL changes
     LaunchedEffect(url) {
@@ -82,11 +103,77 @@ fun BrowserScreen(
         OutlinedTextField(
             value = url,
             onValueChange = { url = it },
-            label = { Text("Download URL") },
-            placeholder = { Text("https://example.com/file.zip") },
+            label = { Text("Download URL or Magnet Link") },
+            placeholder = { Text("https://example.com/file.zip or magnet:?xt=...") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            supportingText = {
+                when (torrentDetection) {
+                    is TorrentDetectionResult.MagnetLink -> {
+                        val metadata = (torrentDetection as TorrentDetectionResult.MagnetLink).metadata
+                        Text(
+                            text = "🧲 Magnet link detected${metadata.name?.let { " - $it" } ?: ""}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    is TorrentDetectionResult.TorrentFile -> {
+                        Text(
+                            text = "📁 Torrent file detected",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    else -> null
+                }
+            }
         )
+
+        // Torrent Info Card (shown when torrent is detected)
+        if (isTorrent && torrentDetection is TorrentDetectionResult.MagnetLink) {
+            val metadata = (torrentDetection as TorrentDetectionResult.MagnetLink).metadata
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "🧲 Torrent Information",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    if (metadata.name != null) {
+                        Text(
+                            text = "Name: ${metadata.name}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                    Text(
+                        text = "Info Hash: ${metadata.infoHash.take(16)}...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    if (metadata.trackers.isNotEmpty()) {
+                        Text(
+                            text = "Trackers: ${metadata.trackers.size}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                    Text(
+                        text = "⚠️ Note: Torrent downloads are currently in beta",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
 
         // Filename Input with auto-fetch button
         OutlinedTextField(
@@ -132,13 +219,14 @@ fun BrowserScreen(
             }
         )
 
-        // Multi-Connection Settings
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
+        // Multi-Connection Settings (only for HTTP downloads)
+        if (!isTorrent) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -192,6 +280,7 @@ fun BrowserScreen(
                     }
                 }
             }
+            }
         }
 
         // Download Button
@@ -203,37 +292,77 @@ fun BrowserScreen(
                     return@Button
                 }
 
-                if (filename.isBlank()) {
+                if (filename.isBlank() && !isTorrent) {
                     snackbarMessage = "Please enter a filename"
                     showSnackbar = true
                     return@Button
                 }
 
-                // Add download with proper path
-                val sanitizedFilename = UrlUtils.sanitizeFilename(filename.trim())
-                val filePath = "$downloadsDir/$sanitizedFilename"
-                viewModel?.addHttpDownload(
-                    url = url.trim(),
-                    name = sanitizedFilename,
-                    savePath = filePath,
-                    connectionCount = connectionCount,
-                    useMultiConnection = useMultiConnection
-                )
+                if (isTorrent) {
+                    // Handle torrent download
+                    val metadata = when (torrentDetection) {
+                        is TorrentDetectionResult.MagnetLink ->
+                            (torrentDetection as TorrentDetectionResult.MagnetLink).metadata
+                        is TorrentDetectionResult.TorrentFile ->
+                            (torrentDetection as TorrentDetectionResult.TorrentFile).metadata
+                        else -> {
+                            snackbarMessage = "Invalid torrent"
+                            showSnackbar = true
+                            return@Button
+                        }
+                    }
 
-                // Clear inputs
-                url = ""
-                filename = ""
-                isFilenameAutoFilled = false
+                    // Use detected name or user-provided filename
+                    val torrentName = if (filename.isNotBlank()) {
+                        UrlUtils.sanitizeFilename(filename.trim())
+                    } else {
+                        metadata.name?.let { UrlUtils.sanitizeFilename(it) } ?: "torrent_download"
+                    }
 
-                snackbarMessage = "Download added!"
-                showSnackbar = true
+                    val filePath = "$downloadsDir/$torrentName"
+
+                    // Add torrent download
+                    viewModel?.addTorrentDownload(
+                        magnetUri = url.trim(),
+                        name = torrentName,
+                        savePath = filePath,
+                        infoHash = metadata.infoHash
+                    )
+
+                    // Clear inputs
+                    url = ""
+                    filename = ""
+                    isFilenameAutoFilled = false
+
+                    snackbarMessage = "Torrent download added! (Note: Full torrent support coming soon)"
+                    showSnackbar = true
+                } else {
+                    // Handle HTTP download
+                    val sanitizedFilename = UrlUtils.sanitizeFilename(filename.trim())
+                    val filePath = "$downloadsDir/$sanitizedFilename"
+                    viewModel?.addHttpDownload(
+                        url = url.trim(),
+                        name = sanitizedFilename,
+                        savePath = filePath,
+                        connectionCount = connectionCount,
+                        useMultiConnection = useMultiConnection
+                    )
+
+                    // Clear inputs
+                    url = ""
+                    filename = ""
+                    isFilenameAutoFilled = false
+
+                    snackbarMessage = "Download added!"
+                    showSnackbar = true
+                }
             },
             modifier = Modifier.fillMaxWidth(),
             enabled = viewModel != null
         ) {
             Icon(Icons.Default.Download, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text("Start Download")
+            Text(if (isTorrent) "Add Torrent Download" else "Start Download")
         }
 
         if (viewModel == null) {

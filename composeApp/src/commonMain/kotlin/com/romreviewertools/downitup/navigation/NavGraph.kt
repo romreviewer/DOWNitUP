@@ -8,6 +8,7 @@ import androidx.navigation.compose.rememberNavController
 import com.romreviewertools.downitup.ui.browser.BrowserScreen
 import com.romreviewertools.downitup.ui.downloads.DownloadsScreen
 import com.romreviewertools.downitup.ui.downloads.DownloadsViewModel
+import com.romreviewertools.downitup.ui.settings.SettingsScreen
 
 @Composable
 fun AppNavGraph(
@@ -23,6 +24,9 @@ fun AppNavGraph(
         }
         composable(Screen.Browser.route) {
             BrowserScreen(viewModel)
+        }
+        composable(Screen.Settings.route) {
+            SettingsScreen()
         }
     }
 }
